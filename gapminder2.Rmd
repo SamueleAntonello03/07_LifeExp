@@ -1,0 +1,154 @@
+---
+title: "07_gampinder"
+author: "Samuele Antonello 162640"
+date: "2026-11-04"
+output:
+  prettydoc::html_pretty:
+    theme: architect
+    highlight: github
+---
+
+```{r setup, include=FALSE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+L'aspettativa di vita di un continente (gruppo di nazioni) si calcola attraverso la media ponderata (la media aritmetica semplice non restituisce un risultato corretto in quanto tratterebbe allo stesso modo paesi con popolazioni molto diverse), moltiplicando l'aspettativa di vita di ogni singolo stato per la sua popolazione, sommando tutti i risultati parziali e dividendo infine per la popolazione totale di quel continente.
+
+$$
+L_{aggr} = \frac{\sum_{i=1}^n(L_i*P_i)}{\sum_{i=1}^nP_i}
+$$
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+library(gapminder)
+
+#evoluzione dell'aspettativa di vita per ogni continente
+continent_life_exp = gapminder|>
+  group_by(continent, year)|>
+  summarise(
+    #calcolo l'aspettativa di vita per ogni combinazione continente-anno
+    weighted_lifeExp = sum(lifeExp * pop) / sum(pop),
+    .groups = "drop"
+  )
+
+
+#grafico dei risultati ottenuti
+
+ggplot(continent_life_exp, aes(x = year, y = weighted_lifeExp, color = continent))+
+  geom_line(linewidth = 1)+
+  geom_point(size = 2)+
+  labs(
+    title = "Aspettativa di vita per continente nel corso degli anni",
+    x = "Anno",
+    y = "Aspettativa di vita",
+    color = "Continente",
+  )+
+  theme_minimal()
+```
+
+Ora andiamo a considerare l'andamento dell'aspettativa di vita negli anni per la popolazione globale nel suo complesso:
+
+```{r}
+world_life_exp = gapminder |>
+  group_by(year)|>
+  summarise(
+    world_weightend_lifeEXp = sum (lifeExp * pop) / sum(pop),
+    .groups = "drop"
+  )
+
+ggplot(world_life_exp, aes(x = year, y = world_weightend_lifeEXp))+
+  geom_line(linewidth = 1, color = "black") +
+  geom_point(size = 2, color = "black") +
+  labs(
+    title = "Aspettativa di vita globale nel corso degli anni",
+    x = "Anno",
+    y = "Aspettativa di vita"
+  ) +
+  theme_minimal()
+
+```
+
+Per rendere più completa l'analisi possiamo costruire un modello lineare sull'aspettativa di vita globale:
+
+```{r}
+library(modelr)
+
+#prendiamo i dati globali calcolati in precedenza
+
+#head(world_life_exp)
+
+mod_world = lm(world_life_exp$world_weightend_lifeEXp ~ world_life_exp$year, data = world_life_exp)
+
+print(mod_world$coefficients)
+summary(mod_world)
+```
+
+Vediamo ora questo modello sul grafico che abbiamo prodotto precedentemente:
+
+```{r}
+ggplot(world_life_exp, aes(x = year, y = world_weightend_lifeEXp))+
+  geom_line(linewidth = 1, color = "black") +
+  geom_point(size = 2, color = "black") +
+  geom_abline(
+    intercept = mod_world$coefficients[1],
+    slope = mod_world$coefficients[2],
+    color = "red",
+    linewidth = 1
+  )+
+  labs(
+    title = "Aspettativa di vita globale nel tempo",
+    subtitle = "Sovrapposizione del modello di regressione lineare",
+    x = "Anno",
+    y = "Aspettativa di vita"
+  ) +
+  theme_minimal()
+
+```
+
+Vediamo ora i coefficienti di correlazione che si osservano tra il gli anni e l'aspettativa di vita:
+
+```{r}
+cor_pearson = cor(world_life_exp$year, world_life_exp$world_weightend_lifeEXp, method = "pearson")
+cor_spearman <- cor(world_life_exp$year, world_life_exp$world_weightend_lifeEXp, method = "spearman")
+R_squared = summary(mod_world)$r.squared
+
+cor_pearson
+cor_spearman
+R_squared
+```
+I risultati che abbiamo ottenuto confermano matematicamente che l'aspettativa di vita globale è cresciuta in modo estremamente regolare e prevedibile nel tempo:
+
+- *Coefficiente di correlazione di Pearson* :essendo molto vicino a 1 indica una fortissima correlazione positiva tra le due variabili.
+- *Coefficiente di correlazione di Spearman* : questa metrica valuta la correlazione basandosi sui ranghi anzichè sui valori esatti, un valore perfettamente uguale a 1 (come nel nostro caso) indica che la crescita è strettamente monotona, quindi l'aspettativa di vita aggregata è sempre stata superiore a quella dell'anno precedente senza mai subire flessioni o inversioni di tendenza.
+- Il *coefficiente di determinazione $R^2$* ci indica che il 96.1% della variazione osservata nell'aspettativa di vita è spiegata dalla retta di regressione che abbiamo calcolato.
+
+Ora possiamo arricchire il nostro modello con predizioni e residui:
+
+```{r}
+world_life_exp = world_life_exp|>
+  add_predictions(mod_world)|>
+  add_residuals(mod_world)
+
+ggplot(world_life_exp, aes(x = year, y = resid))+
+  geom_ref_line(h = 0)+
+  geom_point(size = 3, color = "blue")+
+  geom_line(color = "grey", linetype = "dashed")+
+  labs(
+    title = "Analisi dei residui dell'aspettativa di vita globale",
+    subtitle = "Differenza tra i valori osservati e la previsione del modello lineare",
+    x = "Anno",
+    y = "Residuo (Anni)"
+  )+
+  theme_minimal()
+```
+
+Possiamo interpretare questo grafico come segue:
+
+- La linea orizzontale (h=0) rappresenta il modello teorico perfetto, se un punto cade su questa linea allora l'aspettativa di vita osservata in quell'anno coincide con esattamente con la stima del modello.
+- I residui positivi indicano che l'aspettativa di vita globale in quell'anno sono stati superiori al trend matematico predetto dal modello.
+- I residui negativi indicano l'opposto, ovvero che i dati osservati sono inferiori a quelli predetti dal modello.
+
+
+
